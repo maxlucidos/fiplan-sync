@@ -141,7 +141,7 @@ namespace FiplanSync
                     case "SUPABASE_SECRET_KEY": SupabaseChave = v; break;
                     case "TABELA_VALIDACAO": TabelaValidacao = v == "sim"; break;
                     case "ATUALIZAR_NOTAS": AtualizarNotas = v == "sim"; break;
-                    case "FREQUENCIA": FrequenciaAntiga(v); break;  // instaladores até a 2.1
+                    case "FREQUENCIA": FrequenciaAntiga(v); break;  // versões de teste
                     case "INTERVALO": { int n; if (int.TryParse(v, out n)) Intervalo = n; } break;
                     case "INICIO": Inicio = Minutos(v, Inicio); break;
                     case "FIM": Fim = Minutos(v, Fim); break;
@@ -169,7 +169,7 @@ namespace FiplanSync
             File.WriteAllLines(arquivo, linhas.ToArray(), new UTF8Encoding(false));
         }
 
-        // Versões até a 2.1 tinham só 4 opções fixas de frequência
+        // As versões de teste tinham só 4 opções fixas de frequência
         void FrequenciaAntiga(string codigo)
         {
             Inicio = 7 * 60;

@@ -2,7 +2,7 @@
 ; As telas coletam as opções; o trabalho (testar acessos, simular, gravar a configuração
 ; criptografada) é feito pelo próprio FIPLAN Sync.exe, chamado com os comandos do Program.cs.
 
-#define AppVersion "2.1.0"
+#define AppVersion "1.0.0"
 
 ; Teste: ISCC /DTeste /DPasta=<pasta> instalador\setup.iss gera uma variante que não encosta na instalação real
 #ifdef Teste
@@ -497,7 +497,7 @@ var
   Dias: String;
   Nota: TNewStaticText;
 begin
-  { Configuração anterior (instaladores até a 2.1 tinham só 4 opções fixas) }
+  { Configuração anterior (as versões de teste tinham só 4 opções fixas de frequência) }
   InicioAnterior := MinutosDe(LerEnv('INICIO'), 7 * 60);
   FimAnterior := MinutosDe(LerEnv('FIM'), 19 * 60);
   Dias := LerEnv('DIAS');
