@@ -1,0 +1,6 @@
+.env
+dist/
+comparacao.csv
+config.json
+historico.jsonl
+sync.log
