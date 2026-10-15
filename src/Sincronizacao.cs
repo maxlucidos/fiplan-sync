@@ -27,6 +27,7 @@ namespace FiplanSync
         public int Total, NaoEncontradas;
         public List<Mudanca> Mudancas = new List<Mudanca>();
         public List<AvisoValor> AvisosValor = new List<AvisoValor>();
+        public List<Mudanca> EstornoMenor = new List<Mudanca>();    // não sugeridas: ver Comparar
     }
 
     public class Resumo
@@ -79,13 +80,18 @@ namespace FiplanSync
                 decimal valor = Dec(n, "valor"), pago = Dec(n, "pagamentos"), estornos = Dec(n, "estornos");
                 if (Diferente(valor, f.Empenhado))
                     c.AvisosValor.Add(new AvisoValor { Numero = (string)n["numero"], Sistema = valor, Fiplan = f.Empenhado });
-                if (Diferente(pago, f.Pago) || Diferente(estornos, f.Estornado))
-                    c.Mudancas.Add(new Mudanca
-                    {
-                        Id = n["id"].ToString(), Numero = (string)n["numero"], ProcessoId = n["processo_id"] as string,
-                        Exercicio = f.Exercicio, Empenhado = f.Empenhado, Saldo = f.Saldo,
-                        PagoAntes = pago, PagoDepois = f.Pago, EstornosAntes = estornos, EstornosDepois = f.Estornado,
-                    });
+                if (!Diferente(pago, f.Pago) && !Diferente(estornos, f.Estornado)) continue;
+                var m = new Mudanca
+                {
+                    Id = n["id"].ToString(), Numero = (string)n["numero"], ProcessoId = n["processo_id"] as string,
+                    Exercicio = f.Exercicio, Empenhado = f.Empenhado, Saldo = f.Saldo,
+                    PagoAntes = pago, PagoDepois = f.Pago, EstornosAntes = estornos, EstornosDepois = f.Estornado,
+                };
+                // Estorno não diminui. Quando a view mostra menos que o sistema, é porque ela não traz o
+                // cancelamento de restos a pagar processados ("Total Cancelado RPP" do extrato), e o pago
+                // calculado sai inflado por esse valor. O sistema costuma estar certo: só avisa.
+                if (f.Estornado < estornos - 0.005m) c.EstornoMenor.Add(m);
+                else c.Mudancas.Add(m);
             }
             return c;
         }
@@ -181,6 +187,9 @@ namespace FiplanSync
             resumo.NaoEncontradas = cmp.NaoEncontradas;
             foreach (var a in cmp.AvisosValor)
                 log("  aviso: " + a.Numero + " valor no sistema " + Fmt(a.Sistema) + " ≠ FIPLAN " + Fmt(a.Fiplan) + " (não alterado)");
+            foreach (var m in cmp.EstornoMenor)
+                log("  aviso: " + m.Numero + " estornos no sistema " + Fmt(m.EstornosAntes) + " > FIPLAN " + Fmt(m.EstornosDepois) +
+                    " (a view não traz cancelamento de RP processado; não alterado)");
             log(cmp.Total + " notas no sistema, " + cmp.Mudancas.Count + " com pago ou estorno diferente do FIPLAN" +
                 (cmp.NaoEncontradas > 0 ? " (" + cmp.NaoEncontradas + " não encontradas no FIPLAN)" : "") + ".");
 
@@ -233,6 +242,15 @@ namespace FiplanSync
                     if (Diferente(m.EstornosAntes, m.EstornosDepois))
                         t.AppendLine(numero.PadRight(22) + "  estornos  " + valor(m.EstornosAntes) + " → " + valor(m.EstornosDepois));
                 }
+            }
+            if (cmp.EstornoMenor.Count > 0)
+            {
+                t.AppendLine();
+                t.AppendLine("Estorno no sistema maior que na view do FIPLAN em " + cmp.EstornoMenor.Count + " nota(s)");
+                t.AppendLine("(a view não traz cancelamento de RP processado; não é alterado):");
+                t.AppendLine();
+                foreach (var m in cmp.EstornoMenor)
+                    t.AppendLine(m.Numero.PadRight(22) + "  sistema " + valor(m.EstornosAntes) + "  FIPLAN " + valor(m.EstornosDepois));
             }
             if (cmp.AvisosValor.Count > 0)
             {

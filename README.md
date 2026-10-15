@@ -122,6 +122,8 @@ Para testar o instalador sem encostar na instalação real: `ISCC /DTeste /DPast
 | pago | empenhado − estornado − saldo |
 | fonte | 9º segmento de `CODG_DOTACAO_ORCAMENTARIA` |
 
+A view não tem o **Total Cancelado RPP** do extrato (cancelamento de restos a pagar processados, ou seja, de valor já liquidado). Nessas notas o pago calculado sai maior e o estornado menor que o real, pelo mesmo valor. Como estorno não diminui, quando o estornado da view é menor que o do sistema a nota não é sugerida, só registrada como aviso no histórico.
+
 O `TOTAL_PAGO` da view não é usado porque reflete só o saldo contábil do exercício e diverge do valor real na maioria das notas de anos anteriores (restos a pagar).
 
 O sistema guarda o número como `19301.0001.15.000293-1` e o FIPLAN como `193010001150002931`. O cruzamento usa só os dígitos.

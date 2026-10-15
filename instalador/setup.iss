@@ -2,7 +2,7 @@
 ; As telas coletam as opções; o trabalho (testar acessos, simular, gravar a configuração
 ; criptografada) é feito pelo próprio FIPLAN Sync.exe, chamado com os comandos do Program.cs.
 
-#define AppVersion "1.1.0"
+#define AppVersion "1.1.1"
 
 ; Teste: ISCC /DTeste /DPasta=<pasta> instalador\setup.iss gera uma variante que não encosta na instalação real
 #ifdef Teste
