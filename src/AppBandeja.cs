@@ -14,7 +14,7 @@ namespace FiplanSync
         public const string Nome = "FIPLAN Sync";
 
         readonly NotifyIcon icone;
-        readonly ToolStripMenuItem itUltima, itProxima, itAtualizar, itPausar;
+        readonly ToolStripMenuItem itUltima, itProxima, itAtualizar, itPausar, itVersao;
         readonly System.Windows.Forms.Timer relogio;
         readonly Control ui;  // para trazer sinais de outras threads para a thread da interface
 
@@ -25,6 +25,9 @@ namespace FiplanSync
         Action acaoDoBalao;
         JanelaHistorico janelaHistorico;
         JanelaConfig janelaConfig;
+        DateTime proximaVerificacao = DateTime.Now.AddMinutes(2);  // procura versão nova 2 min depois de abrir e 1x por dia
+        bool verificando;
+        Lancamento avisada;  // versão já avisada, para não repetir o aviso todo dia
 
         public AppBandeja(bool executarAgora, bool abrirConfig)
         {
@@ -48,6 +51,10 @@ namespace FiplanSync
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(itPausar);
             menu.Items.Add(new ToolStripSeparator());
+            itVersao = new ToolStripMenuItem("Procurar atualização...", null, (s, e) => ProcurarAtualizacao(true));
+            menu.Items.Add(itVersao);
+            menu.Items.Add(new ToolStripMenuItem("Versão " + Atualizador.VersaoAtualTexto) { Enabled = false });
+            menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(new ToolStripMenuItem("Sair", null, (s, e) => Sair()));
             itAtualizar.Font = new Font(itAtualizar.Font, FontStyle.Bold);
 
@@ -56,7 +63,11 @@ namespace FiplanSync
             icone.BalloonTipClicked += (s, e) => { if (acaoDoBalao != null) acaoDoBalao(); };
 
             relogio = new System.Windows.Forms.Timer { Interval = 15000 };
-            relogio.Tick += (s, e) => { if (!rodando && proxima.HasValue && DateTime.Now >= proxima.Value) Executar(false); };
+            relogio.Tick += (s, e) =>
+            {
+                if (!rodando && proxima.HasValue && DateTime.Now >= proxima.Value) Executar(false);
+                if (!verificando && DateTime.Now >= proximaVerificacao) ProcurarAtualizacao(false);
+            };
             relogio.Start();
 
             OuvirSinais();
@@ -138,7 +149,7 @@ namespace FiplanSync
                     Avisar(e.Resumo, texto, ToolTipIcon.Error, AbrirHistorico);
                 return;
             }
-            bool houveMudanca = e.Atualizadas > 0;
+            bool houveMudanca = e.Atualizadas > 0 || e.Novas > 0;
             if (e.Manual || config.Notificar == "tudo" || (config.Notificar == "mudancas" && houveMudanca))
                 Avisar(houveMudanca ? e.Resumo : "Atualizado com o FIPLAN",
                        houveMudanca ? "Clique para ver quais notas mudaram." : e.Resumo + ".",
@@ -149,6 +160,65 @@ namespace FiplanSync
         {
             acaoDoBalao = aoClicar;
             icone.ShowBalloonTip(10000, titulo, texto, tipo);
+        }
+
+        // --- Atualização do programa ---
+
+        async void ProcurarAtualizacao(bool manual)
+        {
+            if (verificando) return;
+            verificando = true;
+            proximaVerificacao = DateTime.Now.AddDays(1);
+            Lancamento l = null;
+            Exception falha = null;
+            string repositorio = config.RepositorioAtualizacao;
+            await Task.Run(() => { try { l = Atualizador.ProcurarUltima(repositorio); } catch (Exception ex) { falha = ex; } });
+            verificando = false;
+
+            if (falha != null)
+            {
+                // Na verificação automática, sem internet ou GitHub fora do ar: tenta de novo amanhã, sem incomodar
+                if (manual) MessageBox.Show("Não consegui procurar atualização:\n\n" + falha.Message, Nome, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            if (!Atualizador.EhMaisNova(l))
+            {
+                if (manual) MessageBox.Show("Você já está na versão mais recente (" + Atualizador.VersaoAtualTexto + ").", Nome, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            itVersao.Text = "Atualizar para a versão " + l.Texto + "...";
+            if (manual) { Atualizar(l); return; }
+            if (avisada != null && avisada.Versao == l.Versao) return;
+            avisada = l;
+            Avisar("FIPLAN Sync " + l.Texto + " disponível", "Clique para atualizar (você está na " + Atualizador.VersaoAtualTexto + ").",
+                   ToolTipIcon.Info, () => Atualizar(l));
+        }
+
+        async void Atualizar(Lancamento l)
+        {
+            if (rodando)
+            {
+                MessageBox.Show("Espere a atualização das notas terminar e tente de novo.", Nome, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            string notas = l.Notas.Length > 700 ? l.Notas.Substring(0, 700) + "..." : l.Notas;
+            if (MessageBox.Show("Instalar a versão " + l.Texto + " agora?\n\n" + notas +
+                                "\n\nO FIPLAN Sync fecha, atualiza e abre de novo sozinho. A configuração é mantida.",
+                                Nome, MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+
+            string arquivo = null;
+            Exception falha = null;
+            icone.Icon = Icones.Rodando;
+            icone.Text = Nome + " · baixando a versão " + l.Texto + "...";
+            await Task.Run(() => { try { arquivo = Atualizador.Baixar(l); } catch (Exception ex) { falha = ex; } });
+            if (falha != null)
+            {
+                AtualizarEstado();
+                MessageBox.Show("A atualização não foi feita:\n\n" + falha.Message, Nome, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+            Atualizador.Instalar(arquivo);
+            Encerrar();
         }
 
         // --- Ícone, dica e menu ---

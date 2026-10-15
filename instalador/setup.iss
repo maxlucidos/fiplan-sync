@@ -2,7 +2,7 @@
 ; As telas coletam as opções; o trabalho (testar acessos, simular, gravar a configuração
 ; criptografada) é feito pelo próprio FIPLAN Sync.exe, chamado com os comandos do Program.cs.
 
-#define AppVersion "1.0.0"
+#define AppVersion "1.1.0"
 
 ; Teste: ISCC /DTeste /DPasta=<pasta> instalador\setup.iss gera uma variante que não encosta na instalação real
 #ifdef Teste
@@ -66,6 +66,8 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 
 [Run]
 Filename: "{app}\FIPLAN Sync.exe"; Parameters: "--primeira-execucao"; Description: "Abrir o FIPLAN Sync e fazer a primeira atualização"; Flags: postinstall nowait skipifsilent
+; atualização pelo próprio programa: reabre sem perguntar
+Filename: "{app}\FIPLAN Sync.exe"; Flags: nowait; Check: EhAtualizacao
 
 [UninstallRun]
 Filename: "{app}\FIPLAN Sync.exe"; Parameters: "--sair"; Flags: runhidden waituntilterminated; RunOnceId: "Fechar"
@@ -287,7 +289,7 @@ begin
     'ORACLE_CONNECT_STRING=' + ConexaoAnterior + #13#10 +
     'SUPABASE_URL=' + Trim(SupabasePage.Values[0]) + #13#10 +
     'SUPABASE_SECRET_KEY_HEX=' + Hex(Trim(SupabasePage.Values[1])) + #13#10 +
-    'TABELA_VALIDACAO=' + SimNao(ValidacaoPage.Values[0]) + #13#10 +
+    'ENVIAR_VALIDACAO=' + SimNao(ValidacaoPage.Values[0]) + #13#10 +
     'ATUALIZAR_NOTAS=' + SimNao(AtualizacaoPage.Values[0]) + #13#10 +
     'INTERVALO=' + IntToStr(Intervalo) + #13#10 +
     'INICIO=' + InicioCombo.Text + #13#10 +
@@ -439,32 +441,13 @@ begin
   end;
 end;
 
-function ConferirTabela: Boolean;
+{ A staging é do próprio sistema (já existe no Supabase): só confere se tem as colunas usadas }
+function ConferirStaging: Boolean;
 var
-  Codigo: Integer;
   Saida: String;
 begin
-  Result := False;
-  while True do
-  begin
-    Codigo := RodarAntes('--tabela-existe', 'Verificando a tabela no Supabase...', Saida);
-    if Codigo = 0 then
-    begin
-      Result := True;
-      Exit;
-    end;
-    if Codigo <> 2 then
-    begin
-      MsgBox(Saida, mbError, MB_OK);
-      Exit;
-    end;
-    if MsgBox('A tabela fiplan_notas_empenho ainda não existe no Supabase.' + #13#10#13#10 +
-              'Ao clicar em OK, o SQL Editor do Supabase abre no navegador com o SQL já copiado. ' +
-              'Cole com Ctrl+V, clique em Run e volte aqui.', mbInformation, MB_OKCANCEL) <> IDOK then Exit;
-    RodarAntes('--abrir-sql', 'Abrindo o SQL Editor...', Saida);
-    if MsgBox('Depois de rodar o SQL no Supabase, clique em OK para verificar.',
-              mbInformation, MB_OKCANCEL) <> IDOK then Exit;
-  end;
+  Result := RodarAntes('--staging-existe', 'Verificando a tabela staging_notas_empenho...', Saida) = 0;
+  if not Result then MsgBox(Saida, mbError, MB_OK);
 end;
 
 { --- Telas ------------------------------------------------------------------- }
@@ -601,12 +584,12 @@ begin
   SupabasePage.Values[1] := LerSegredo('SUPABASE_SECRET_KEY');
 
   ValidacaoPage := CreateInputOptionPage(SupabasePage.ID,
-    'Tabela de validação', 'Uma cópia do FIPLAN para conferir os números.',
-    'A tabela fiplan_notas_empenho guarda as notas do FIPLAN, e a view vw_fiplan_comparacao mostra ' +
-    'cada nota do sistema lado a lado com o FIPLAN (ok, diferente ou não encontrada).' + #13#10#13#10 +
-    'Não altera nada do sistema.', False, False);
-  ValidacaoPage.Add('Usar a tabela de validação (recomendado)');
-  ValidacaoPage.Values[0] := LerEnv('TABELA_VALIDACAO') <> 'nao';
+    'Validação das diferenças', 'Notas desatualizadas ficam pendentes para um operador validar.',
+    'As notas de processo_notas_empenho com pago ou estorno diferente do FIPLAN vão para a tabela ' +
+    'staging_notas_empenho, como pendentes, com os valores do FIPLAN. O operador valida pelo sistema.' + #13#10#13#10 +
+    'Não altera as notas do sistema. Quando a nota é corrigida, a pendência some sozinha.', False, False);
+  ValidacaoPage.Add('Enviar as diferenças para validação (recomendado)');
+  ValidacaoPage.Values[0] := (LerEnv('ENVIAR_VALIDACAO') <> 'nao') and (LerEnv('TABELA_VALIDACAO') <> 'nao');
 
   AtualizacaoPage := CreateInputOptionPage(ValidacaoPage.ID,
     'Atualização das notas', 'Manter pagamentos e estornos iguais aos do FIPLAN.',
@@ -636,9 +619,20 @@ begin
   EsperaPage := CreateOutputProgressPage('Aguarde', '');
 end;
 
+{ /ATUALIZACAO: o próprio programa rodou o instalador para se atualizar. Não mostra as telas
+  nem refaz os testes de acesso: mantém a configuração atual e reabre o programa no fim. }
+function EhAtualizacao: Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  for I := 1 to ParamCount do
+    if CompareText(ParamStr(I), '/ATUALIZACAO') = 0 then Result := True;
+end;
+
 function ShouldSkipPage(PageID: Integer): Boolean;
 begin
-  Result := (PageID = SimulacaoPage.ID) and not AtualizacaoPage.Values[0];
+  Result := EhAtualizacao or ((PageID = SimulacaoPage.ID) and not AtualizacaoPage.Values[0]);
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
@@ -647,6 +641,7 @@ var
   Saida: String;
 begin
   Result := True;
+  if EhAtualizacao then Exit;
 
   if CurPageID = OraclePage.ID then
   begin
@@ -684,14 +679,14 @@ begin
 
   else if CurPageID = ValidacaoPage.ID then
   begin
-    if ValidacaoPage.Values[0] then Result := ConferirTabela;
+    if ValidacaoPage.Values[0] then Result := ConferirStaging;
   end
 
   else if CurPageID = AtualizacaoPage.ID then
   begin
     if not ValidacaoPage.Values[0] and not AtualizacaoPage.Values[0] then
     begin
-      MsgBox('Ligue pelo menos uma opção: a tabela de validação (etapa anterior) ou a atualização das notas.',
+      MsgBox('Ligue pelo menos uma opção: a validação das diferenças (etapa anterior) ou a atualização das notas.',
              mbError, MB_OK);
       Result := False;
     end
@@ -737,7 +732,7 @@ begin
   Result :=
     'FIPLAN:' + NewLine + Space + 'usuário ' + OraclePage.Values[0] + NewLine + NewLine +
     'Supabase:' + NewLine + Space + SupabasePage.Values[0] + NewLine + NewLine +
-    'Tabela de validação:' + NewLine + Space + SimNaoTexto(ValidacaoPage.Values[0]) + NewLine + NewLine +
+    'Enviar diferenças para validação:' + NewLine + Space + SimNaoTexto(ValidacaoPage.Values[0]) + NewLine + NewLine +
     'Atualizar as notas do sistema:' + NewLine + Space + SimNaoTexto(AtualizacaoPage.Values[0]) + NewLine + NewLine +
     'Frequência:' + NewLine + Space + DescreverAgenda + NewLine + NewLine +
     'Pasta:' + NewLine + Space + ExpandConstant('{app}');

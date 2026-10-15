@@ -31,7 +31,7 @@ namespace FiplanSync
             lista.Columns.Add("Data", 130);
             lista.Columns.Add("Situação", 80);
             lista.Columns.Add("Notas lidas", 90, HorizontalAlignment.Right);
-            lista.Columns.Add("Atualizadas", 90, HorizontalAlignment.Right);
+            lista.Columns.Add("Diferenças", 90, HorizontalAlignment.Right);
             lista.Columns.Add("Resumo", 380);
             lista.SelectedIndexChanged += (s, e) => MostrarDetalhe();
 
@@ -74,7 +74,7 @@ namespace FiplanSync
                 var item = new ListViewItem(e.Quando.ToString("dd/MM/yyyy HH:mm"));
                 item.SubItems.Add(e.Ok ? "OK" : "Erro");
                 item.SubItems.Add(e.Ok ? e.Lidas.ToString("N0") : "");
-                item.SubItems.Add(e.Ok ? e.Atualizadas.ToString("N0") : "");
+                item.SubItems.Add(e.Ok ? (e.Atualizadas + e.ParaValidar).ToString("N0") : "");
                 item.SubItems.Add(e.Resumo + (e.Manual ? " (manual)" : ""));
                 if (!e.Ok) item.ForeColor = Color.FromArgb(180, 35, 24);
                 lista.Items.Add(item);

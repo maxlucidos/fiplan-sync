@@ -13,7 +13,7 @@ namespace FiplanSync
         readonly Config original;
         readonly TextBox txUsuario, txSenha, txServidor, txUrl, txChave;
         readonly Label lbOracle, lbSupabase;
-        readonly CheckBox ckTabela, ckAtualizar, ckIniciar;
+        readonly CheckBox ckValidacao, ckAtualizar, ckIniciar;
         readonly ComboBox cbIntervalo, cbNotificar;
         readonly DateTimePicker dtInicio, dtFim;
         readonly Label lbDas, lbAs, lbAgenda;
@@ -32,7 +32,7 @@ namespace FiplanSync
         public JanelaConfig(Config config)
         {
             original = config;
-            Text = "FIPLAN Sync · Configurações";
+            Text = "FIPLAN Sync " + Atualizador.VersaoAtualTexto + " · Configurações";
             Icon = Icones.Ok;
             Font = SystemFonts.MessageBoxFont;
             AutoScaleMode = AutoScaleMode.Font;
@@ -68,8 +68,8 @@ namespace FiplanSync
 
             // Opções
             var opcoes = Grade();
-            ckTabela = Opcao(opcoes, "Manter a tabela de validação (fiplan_notas_empenho)", config.TabelaValidacao,
-                "Cópia das notas do FIPLAN para conferir pela view vw_fiplan_comparacao. Não altera o sistema.");
+            ckValidacao = Opcao(opcoes, "Enviar as diferenças para validação (staging_notas_empenho)", config.EnviarValidacao,
+                "As notas do sistema com pago ou estorno diferente do FIPLAN ficam pendentes para um operador validar. Não altera as notas.");
             ckAtualizar = Opcao(opcoes, "Atualizar pagamentos e estornos das notas do sistema", config.AtualizarNotas,
                 "Ao ligar, mostra antes a lista do que mudaria. O valor empenhado nunca é alterado.");
             cbNotificar = Lista(opcoes, "Notificações:", NotificarTextos, Array.IndexOf(NotificarCodigos, config.Notificar));
@@ -248,7 +248,7 @@ namespace FiplanSync
             c.OracleConexao = txServidor.Text.Trim();
             c.SupabaseUrl = txUrl.Text.Trim();
             c.SupabaseChave = txChave.Text.Trim();
-            c.TabelaValidacao = ckTabela.Checked;
+            c.EnviarValidacao = ckValidacao.Checked;
             c.AtualizarNotas = ckAtualizar.Checked;
             LerAgenda(c);
             c.Notificar = NotificarCodigos[cbNotificar.SelectedIndex];
@@ -312,14 +312,14 @@ namespace FiplanSync
                 abas.SelectedIndex = 3;
                 return;
             }
-            if (!c.TabelaValidacao && !c.AtualizarNotas)
+            if (!c.EnviarValidacao && !c.AtualizarNotas)
             {
-                MessageBox.Show(this, "Ligue pelo menos uma opção: a tabela de validação ou a atualização das notas.", Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(this, "Ligue pelo menos uma opção: o envio para validação ou a atualização das notas.", Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 abas.SelectedIndex = 2;
                 return;
             }
 
-            if (c.TabelaValidacao && !await ConferirTabela(c)) return;
+            if (c.EnviarValidacao && !await ConferirStaging(c)) return;
 
             // Ligando a atualização agora: mostra o que mudaria antes de confirmar
             if (c.AtualizarNotas && !original.AtualizarNotas)
@@ -339,25 +339,13 @@ namespace FiplanSync
             Close();
         }
 
-        async Task<bool> ConferirTabela(Config c)
+        async Task<bool> ConferirStaging(Config c)
         {
-            while (true)
-            {
-                var r = await Rodar("--tabela-existe", c);
-                if (r.Codigo == 0) return true;
-                if (r.Codigo != 2)
-                {
-                    MessageBox.Show(this, r.Texto == "" ? "Não consegui consultar o Supabase." : r.Texto, Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    return false;
-                }
-                if (MessageBox.Show(this,
-                        "A tabela fiplan_notas_empenho ainda não existe no Supabase.\n\n" +
-                        "Ao clicar em OK, o SQL Editor do Supabase abre no navegador com o SQL já copiado. Cole com Ctrl+V, clique em Run e volte aqui.",
-                        Text, MessageBoxButtons.OKCancel, MessageBoxIcon.Information) != DialogResult.OK) return false;
-                await Rodar("--abrir-sql", c);
-                if (MessageBox.Show(this, "Depois de rodar o SQL no Supabase, clique em OK para verificar.",
-                        Text, MessageBoxButtons.OKCancel, MessageBoxIcon.Information) != DialogResult.OK) return false;
-            }
+            var r = await Rodar("--staging-existe", c);
+            if (r.Ok) return true;
+            MessageBox.Show(this, r.Texto == "" ? "Não consegui consultar o Supabase." : r.Texto, Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
+            abas.SelectedIndex = 1;
+            return false;
         }
     }
 

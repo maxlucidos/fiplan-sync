@@ -1,15 +1,12 @@
 // Comandos de linha de comando usados pelo instalador (e pela janela de Configurações, na mesma
 // forma). Cada um escreve o resultado em texto e devolve o código de saída:
-// 0 = ok, 1 = erro, 2 = "não" (ex.: tabela não existe).
+// 0 = ok, 1 = erro.
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.Reflection;
 using System.Text;
-using System.Threading;
 using System.Web.Script.Serialization;
-using System.Windows.Forms;
 
 namespace FiplanSync
 {
@@ -25,18 +22,8 @@ namespace FiplanSync
         public static readonly string[] Nomes =
         {
             "--sync", "--dry-run", "--comparar", "--testar-oracle", "--testar-supabase",
-            "--tabela-existe", "--abrir-sql", "--simular", "--desagendar",
+            "--staging-existe", "--simular", "--desagendar",
         };
-
-        public static string Sql
-        {
-            get
-            {
-                using (var s = Assembly.GetExecutingAssembly().GetManifestResourceStream("supabase.sql"))
-                using (var r = new StreamReader(s, Encoding.UTF8))
-                    return r.ReadToEnd();
-            }
-        }
 
         // Executa um comando e devolve o código e o texto (erros viram mensagem, não exceção)
         public static Resposta Executar(string comando, Config c)
@@ -71,27 +58,17 @@ namespace FiplanSync
                 case "--testar-supabase":
                     return TestarSupabase(c, o);
 
-                case "--tabela-existe":
+                case "--staging-existe":
                     {
-                        var r = new Supabase(c).Enviar("GET", "fiplan_notas_empenho?select=numr_emp&limit=1", null, null);
+                        // A staging é do sistema (já existe no Supabase); confere se tem as colunas usadas
+                        var r = new Supabase(c).Enviar("GET",
+                            "staging_notas_empenho?select=id,empenho_id,processo_id,numero_empenho,valor_pgto_ia,valor_estorno_ia,contexto_extracao,status&limit=1",
+                            null, null);
                         if (r.Key == 200) return 0;
-                        if (r.Key == 404) return 2;
-                        o.WriteLine(r.Key == 401 ? "O Supabase recusou a chave." : "Erro ao consultar o Supabase (HTTP " + r.Key + "): " + r.Value);
+                        o.WriteLine(r.Key == 401 ? "O Supabase recusou a chave."
+                                  : r.Key == 404 ? "A tabela staging_notas_empenho não existe neste projeto do Supabase."
+                                  : "A tabela staging_notas_empenho não tem as colunas esperadas (HTTP " + r.Key + "): " + r.Value);
                         return 1;
-                    }
-
-                case "--abrir-sql":
-                    {
-                        var sql = Sql;
-                        File.WriteAllText(Path.Combine(Config.Pasta, "supabase.sql"), sql, new UTF8Encoding(false));
-                        // A área de transferência exige uma thread STA
-                        var t = new Thread(() => { try { Clipboard.SetText(sql); } catch { } });
-                        t.SetApartmentState(ApartmentState.STA);
-                        t.Start();
-                        t.Join();
-                        string refProjeto = new Uri(new Supabase(c).Url).Host.Split('.')[0];
-                        Process.Start("https://supabase.com/dashboard/project/" + refProjeto + "/sql/new");
-                        return 0;
                     }
 
                 case "--simular":

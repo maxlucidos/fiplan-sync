@@ -15,12 +15,30 @@ namespace FiplanSync
         public bool Ok;
         public bool Manual;
         public int Lidas;
-        public int Atualizadas;
+        public int Atualizadas;      // aplicadas direto em processo_notas_empenho
+        public int ParaValidar;      // pendentes na staging_notas_empenho
+        public int Novas;            // pendências novas nesta execução
         public string Resumo = "";
         public string Detalhe = "";
         public string Origem = "";   // fiplan | supabase | outro (quando deu erro)
         public bool Configurar;      // erro que só se resolve nas Configurações
         public string Mensagem = ""; // mensagem do erro
+
+        static void Listar(StringBuilder detalhe, string titulo, List<Mudanca> notas)
+        {
+            if (notas.Count == 0) return;
+            detalhe.AppendLine(titulo);
+            foreach (var m in notas)
+            {
+                detalhe.Append("  " + m.Numero);
+                if (m.PagoAntes != m.PagoDepois)
+                    detalhe.Append("   pago " + Sincronizacao.Fmt(m.PagoAntes) + " → " + Sincronizacao.Fmt(m.PagoDepois));
+                if (m.EstornosAntes != m.EstornosDepois)
+                    detalhe.Append("   estornos " + Sincronizacao.Fmt(m.EstornosAntes) + " → " + Sincronizacao.Fmt(m.EstornosDepois));
+                detalhe.AppendLine();
+            }
+            detalhe.AppendLine();
+        }
 
         public DateTime Quando { get { return DateTime.Parse(Data, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind); } }
 
@@ -34,27 +52,19 @@ namespace FiplanSync
                 e.Ok = true;
                 e.Lidas = r.Lidas;
                 e.Atualizadas = r.Atualizadas.Count;
+                e.ParaValidar = r.ParaValidar.Count;
+                e.Novas = r.StagingNovas;
                 if (config.AtualizarNotas)
                     e.Resumo = e.Atualizadas == 0 ? "Nenhuma nota mudou"
                              : e.Atualizadas == 1 ? "1 nota atualizada"
                              : e.Atualizadas + " notas atualizadas";
                 else
-                    e.Resumo = "Tabela de validação atualizada";
+                    e.Resumo = e.ParaValidar == 0 ? "Tudo igual ao FIPLAN"
+                             : (e.ParaValidar == 1 ? "1 nota para validar" : e.ParaValidar + " notas para validar") +
+                               (e.Novas > 0 ? " (" + e.Novas + (e.Novas == 1 ? " nova)" : " novas)") : "");
 
-                if (r.Atualizadas.Count > 0)
-                {
-                    detalhe.AppendLine("Notas atualizadas (sistema → FIPLAN):");
-                    foreach (var m in r.Atualizadas)
-                    {
-                        detalhe.Append("  " + m.Numero);
-                        if (m.PagoAntes != m.PagoDepois)
-                            detalhe.Append("   pago " + Sincronizacao.Fmt(m.PagoAntes) + " → " + Sincronizacao.Fmt(m.PagoDepois));
-                        if (m.EstornosAntes != m.EstornosDepois)
-                            detalhe.Append("   estornos " + Sincronizacao.Fmt(m.EstornosAntes) + " → " + Sincronizacao.Fmt(m.EstornosDepois));
-                        detalhe.AppendLine();
-                    }
-                    detalhe.AppendLine();
-                }
+                Listar(detalhe, "Notas atualizadas (sistema → FIPLAN):", r.Atualizadas);
+                Listar(detalhe, "Notas enviadas para validação na staging_notas_empenho (sistema → FIPLAN):", r.ParaValidar);
             }
             else
             {

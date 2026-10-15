@@ -64,13 +64,14 @@ namespace FiplanSync
             throw new ErroSync("Supabase HTTP " + r.Key + " em " + tabela + ": " + r.Value, "supabase", false);
         }
 
-        public List<Dictionary<string, object>> Listar(string tabela, string colunas)
+        // Todas as linhas (em páginas de 1000); filtro no formato do PostgREST, ex.: "&status=eq.pendente"
+        public List<Dictionary<string, object>> Listar(string tabela, string colunas, string filtro)
         {
             var todas = new List<Dictionary<string, object>>();
             for (int offset = 0; ; offset += 1000)
             {
                 var lote = json.Deserialize<List<Dictionary<string, object>>>(
-                    Exigir("GET", tabela + "?select=" + colunas + "&order=id&offset=" + offset + "&limit=1000", null, null));
+                    Exigir("GET", tabela + "?select=" + colunas + filtro + "&order=id&offset=" + offset + "&limit=1000", null, null));
                 todas.AddRange(lote);
                 if (lote.Count < 1000) return todas;
             }

@@ -1,5 +1,5 @@
 ﻿# Gera em dist\:
-#   FIPLAN Sync.exe          o programa (app de bandeja + comandos), com o driver do Oracle e o SQL embutidos
+#   FIPLAN Sync.exe          o programa (app de bandeja + comandos), com o driver do Oracle embutido
 #   fiplan-sync.ico          ícone do programa e do instalador
 #   FIPLAN-Sync-Setup.exe    instalador (Inno Setup) que é entregue ao usuário
 #
@@ -25,12 +25,28 @@ if (Test-Path dist) {
 }
 New-Item -ItemType Directory dist | Out-Null
 
+# A versão vem de um lugar só: o AppVersion do instalador. Vai também para dentro do .exe,
+# que usa o número para saber se há atualização.
+$versao = (Select-String -Path instalador\setup.iss -Pattern '#define AppVersion "([^"]+)"').Matches[0].Groups[1].Value
+if (-not $versao) { throw 'AppVersion não encontrado em instalador\setup.iss' }
+Write-Host "Versão $versao"
+@"
+// Gerado pelo build.ps1 a partir do AppVersion do instalador
+using System.Reflection;
+[assembly: AssemblyTitle("FIPLAN Sync")]
+[assembly: AssemblyProduct("FIPLAN Sync")]
+[assembly: AssemblyCompany("DETRAN-MT")]
+[assembly: AssemblyVersion("$versao.0")]
+[assembly: AssemblyFileVersion("$versao.0")]
+[assembly: AssemblyInformationalVersion("$versao")]
+"@ | Set-Content -Encoding UTF8 dist\Versao.cs
+
 function Compilar([string[]] $extras) {
-    $fontes = Get-ChildItem src\*.cs | ForEach-Object { $_.FullName }
+    $fontes = @(Get-ChildItem src\*.cs | ForEach-Object { $_.FullName }) + (Resolve-Path dist\Versao.cs).Path
     & $csc /nologo /target:winexe '/out:dist\FIPLAN Sync.exe' /codepage:65001 /optimize `
         /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:System.Security.dll /r:System.Web.Extensions.dll `
         /r:System.Net.Http.dll /r:lib\Oracle.ManagedDataAccess.dll `
-        '/resource:lib\Oracle.ManagedDataAccess.dll,Oracle.ManagedDataAccess.dll' '/resource:sql\supabase.sql,supabase.sql' `
+        '/resource:lib\Oracle.ManagedDataAccess.dll,Oracle.ManagedDataAccess.dll' `
         @extras @fontes
     if ($LASTEXITCODE -ne 0) { throw 'Falha ao compilar' }
 }

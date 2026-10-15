@@ -8,8 +8,22 @@ Leva as notas de empenho do DETRAN (UO 19301) da view `ACWVW0111` do FIPLAN para
 
 | Opção | O que faz |
 |---|---|
-| **Tabela de validação** | Grava todas as notas do FIPLAN em `fiplan_notas_empenho`. A view `vw_fiplan_comparacao` mostra cada nota do sistema lado a lado com o FIPLAN (`ok`, `diferente` ou `nao encontrada`). Não altera nada do sistema. |
-| **Atualizar notas** | Atualiza `pagamentos` e `estornos` em `processo_notas_empenho` com os valores do FIPLAN. O `valor` empenhado não é alterado; divergências de valor só aparecem no histórico. |
+| **Enviar diferenças para validação** (recomendado) | As notas de `processo_notas_empenho` com pago ou estorno diferente do FIPLAN viram linhas `pendente` em `staging_notas_empenho`, para um operador validar pelo sistema. Não altera as notas. |
+| **Atualizar notas** | Atualiza `pagamentos` e `estornos` em `processo_notas_empenho` direto com os valores do FIPLAN, sem validação. O `valor` empenhado não é alterado; divergências de valor só aparecem no histórico. |
+
+### Como as diferenças vão para a staging
+
+Só entram as notas cadastradas no sistema cujo pago ou estorno difere do FIPLAN (mais de meio centavo). Cada uma vira **uma** linha `pendente`:
+
+| Coluna da staging | Valor |
+|---|---|
+| `empenho_id` | `processo_notas_empenho.id` |
+| `processo_id`, `numero_empenho` | da nota no sistema |
+| `valor_pgto_ia` / `valor_estorno_ia` | pago e estornado no FIPLAN |
+| `contexto_extracao` | `FIPLAN Sync: view ACWVW0111 em <data> · empenhado · pago · estornado · saldo (no sistema: pago · estornos)` |
+| `status` | `pendente` |
+
+A cada atualização o programa mantém essas pendências em dia: cria as que faltam, atualiza os valores se o FIPLAN mudou e **apaga** as que não são mais necessárias (a nota foi corrigida). Ele só mexe em linhas `pendente` cujo `contexto_extracao` começa com `FIPLAN Sync:`; linhas de outras origens (ex.: extraídas por IA) e as já validadas nunca são alteradas. Notas sem `processo_id` não vão para a staging (a coluna é obrigatória) e aparecem como aviso no histórico.
 
 O sistema calcula o saldo no front (`valor − pagamentos − estornos`). Como o pago é calculado como `empenhado − estornado − saldo do FIPLAN`, o saldo exibido fica igual ao do FIPLAN.
 
@@ -19,7 +33,7 @@ Precisa estar na rede do DETRAN (192.168.221.21:1521). Abra o `FIPLAN-Sync-Setup
 
 1. **Conexão com o FIPLAN**: usuário e senha da view. O instalador testa antes de avançar.
 2. **Conexão com o Supabase**: URL do projeto e **chave secret** (Project Settings > API Keys > Secret keys).
-3. **Tabela de validação**: se ainda não existir, o instalador abre o SQL Editor do Supabase com o SQL já copiado. É só colar, clicar em Run e confirmar.
+3. **Validação das diferenças**: o instalador confere se a `staging_notas_empenho` existe com as colunas usadas. Não é preciso rodar SQL.
 4. **Atualização das notas**: ao ligar, a etapa seguinte lista o que mudaria e só avança com "Conferi e quero aplicar" marcado.
 5. **Frequência**: de 15 em 15 minutos até a cada 4 horas, uma vez por dia ou só manual; o horário (das __ às __) e os dias da semana.
 
@@ -35,6 +49,13 @@ Clique com o botão direito no ícone "F" perto do relógio (talvez dentro da se
 - **Histórico**: uma linha por atualização; ao selecionar, mostra quais notas mudaram (antes → depois) ou o erro.
 - **Configurações**: acesso ao FIPLAN e ao Supabase (com botões de teste), opções, notificações, "abrir com o Windows" e o **Agendamento** (frequência, horário e dias da semana).
 - **Pausar atualizações** e **Sair**.
+- **Procurar atualização…**: verifica se há versão nova do programa (a versão instalada aparece logo abaixo).
+
+### Atualização do programa
+
+Dois minutos depois de abrir e depois uma vez por dia, o programa consulta a release mais nova em [github.com/maxlucidos/fiplan-sync](https://github.com/maxlucidos/fiplan-sync/releases). Se houver versão maior que a instalada, mostra a notificação "FIPLAN Sync X disponível"; ao confirmar, baixa o instalador, confere o SHA-256 publicado pelo GitHub e roda em modo de atualização (`/ATUALIZACAO`): sem telas, sem refazer os testes de acesso, mantendo a configuração, e reabre sozinho. Sem internet, ele tenta de novo no dia seguinte, sem avisar.
+
+O repositório consultado pode ser trocado no `config.json` (`"repositorioAtualizacao": "dono/repositório"`).
 
 | Cor do ícone | Significado |
 |---|---|
@@ -52,7 +73,6 @@ Arquivos em `%LOCALAPPDATA%\fiplan-sync`: `config.json` (configuração, segredo
 ```
 src\          código C# (app de bandeja, comandos e sincronização)
 lib\          driver do Oracle para .NET e sua licença
-sql\          tabela de validação e view de comparação (vai embutido no .exe)
 instalador\   script do Inno Setup
 build.ps1     gera o programa e o instalador em dist\
 ```
@@ -73,7 +93,6 @@ Precisa do Inno Setup 6.3+ (`winget install JRSoftware.InnoSetup`). O C# é comp
 | `src\Comandos.cs` | Comandos usados pelo instalador e pelas Configurações |
 | `src\Config.cs`, `Agenda.cs`, `Historico.cs`, `Icones.cs`, `Janela*.cs` | Configuração, horários, histórico, ícones e janelas |
 | `lib\Oracle.ManagedDataAccess.dll` | Driver oficial da Oracle para .NET (19.18.0, sem dependências), embutido no .exe |
-| `sql\supabase.sql` | Tabela `fiplan_notas_empenho` e view `vw_fiplan_comparacao` (embutido no .exe) |
 | `instalador\setup.iss` | Instalador (Inno Setup) |
 
 Para testar comandos sem instalar, use um arquivo de configuração (modelo em `.env.example`):
@@ -84,6 +103,12 @@ Para testar comandos sem instalar, use um arquivo de configuração (modelo em `
 "dist\FIPLAN Sync.exe" --dry-run --env .env
 "dist\FIPLAN Sync.exe" --comparar --env .env     # gera comparacao.csv
 ```
+
+### Publicar uma versão
+
+1. Suba o `AppVersion` em `instalador\setup.iss` (é a única fonte da versão: o `build.ps1` também a grava no `.exe`).
+2. Rode o `build.ps1` e faça o commit.
+3. Crie a release no GitHub com a tag `vX.Y.Z` e anexe o `dist\FIPLAN-Sync-Setup.exe` **com esse nome**: é por ele que os programas instalados encontram o instalador.
 
 Para testar o instalador sem encostar na instalação real: `ISCC /DTeste /DPasta=<pasta> instalador\setup.iss`. Isso gera uma variante com outro nome e outro AppId; defina `FIPLAN_TAREFA` para o `--desagendar` usar outro nome de tarefa.
 

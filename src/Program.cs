@@ -7,7 +7,7 @@
 //   --importar <arquivo>     grava a configuração a partir de um arquivo KEY=VALUE (senhas criptografadas)
 //   --exportar <arquivo>     escreve a configuração atual em KEY=VALUE (para o instalador preencher as telas)
 //   --gerar-icone <arquivo>  gera o .ico do programa (usado pelo build)
-//   --testar-oracle, --testar-supabase, --tabela-existe, --abrir-sql, --simular,
+//   --testar-oracle, --testar-supabase, --staging-existe, --simular,
 //   --sync, --dry-run, --comparar, --desagendar      ver Comandos.cs
 //
 // Os comandos usam o config.json; com "--env <arquivo>" usam um arquivo KEY=VALUE

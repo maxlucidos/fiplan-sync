@@ -17,7 +17,7 @@ namespace FiplanSync
         public string OracleConexao = "";      // vazio = servidor padrão do FIPLAN (definido no motor)
         public string SupabaseUrl = "";
         public string SupabaseChave = "";
-        public bool TabelaValidacao = true;
+        public bool EnviarValidacao = true;    // diferenças vão para staging_notas_empenho
         public bool AtualizarNotas = false;
         // Agenda: a cada Intervalo minutos, das Inicio às Fim, nos Dias marcados.
         // Intervalo 0 = uma vez por dia (no horário de Inicio); -1 = só manual.
@@ -27,6 +27,7 @@ namespace FiplanSync
         public string Dias = "12345";          // 1 = segunda ... 7 = domingo
         public string Notificar = "mudancas";  // tudo | mudancas | erros
         public bool Pausado = false;
+        public string RepositorioAtualizacao = Atualizador.RepositorioPadrao;  // GitHub "dono/repositório"
 
         public static string Pasta { get { return AppDomain.CurrentDomain.BaseDirectory; } }
         static string Arquivo { get { return Path.Combine(Pasta, "config.json"); } }
@@ -49,7 +50,7 @@ namespace FiplanSync
             c.OracleConexao = Texto(d, "oracleConexao", "");
             c.SupabaseUrl = Texto(d, "supabaseUrl", "");
             c.SupabaseChave = Abrir(Texto(d, "supabaseChave", ""));
-            c.TabelaValidacao = Logico(d, "tabelaValidacao", c.TabelaValidacao);
+            c.EnviarValidacao = Logico(d, "enviarValidacao", Logico(d, "tabelaValidacao", c.EnviarValidacao));
             c.AtualizarNotas = Logico(d, "atualizarNotas", c.AtualizarNotas);
             if (d.ContainsKey("intervalo"))
             {
@@ -61,6 +62,7 @@ namespace FiplanSync
             else c.FrequenciaAntiga(Texto(d, "frequencia", "hora"));
             c.Notificar = Texto(d, "notificar", c.Notificar);
             c.Pausado = Logico(d, "pausado", false);
+            c.RepositorioAtualizacao = Texto(d, "repositorioAtualizacao", c.RepositorioAtualizacao);
             return c;
         }
 
@@ -72,7 +74,7 @@ namespace FiplanSync
             d["oracleConexao"] = OracleConexao;
             d["supabaseUrl"] = SupabaseUrl;
             d["supabaseChave"] = Fechar(SupabaseChave);
-            d["tabelaValidacao"] = TabelaValidacao;
+            d["enviarValidacao"] = EnviarValidacao;
             d["atualizarNotas"] = AtualizarNotas;
             d["intervalo"] = Intervalo;
             d["inicio"] = Inicio;
@@ -80,6 +82,7 @@ namespace FiplanSync
             d["dias"] = Dias;
             d["notificar"] = Notificar;
             d["pausado"] = Pausado;
+            d["repositorioAtualizacao"] = RepositorioAtualizacao;
             File.WriteAllText(Arquivo, new JavaScriptSerializer().Serialize(d), new UTF8Encoding(false));
         }
 
@@ -97,7 +100,7 @@ namespace FiplanSync
             if (OracleConexao != "") env["ORACLE_CONNECT_STRING"] = OracleConexao;
             env["SUPABASE_URL"] = SupabaseUrl;
             env["SUPABASE_SECRET_KEY"] = SupabaseChave;
-            env["TABELA_VALIDACAO"] = TabelaValidacao ? "sim" : "nao";
+            env["ENVIAR_VALIDACAO"] = EnviarValidacao ? "sim" : "nao";
             env["ATUALIZAR_NOTAS"] = AtualizarNotas ? "sim" : "nao";
             return env;
         }
@@ -139,7 +142,8 @@ namespace FiplanSync
                     case "ORACLE_CONNECT_STRING": OracleConexao = v; break;
                     case "SUPABASE_URL": SupabaseUrl = v; break;
                     case "SUPABASE_SECRET_KEY": SupabaseChave = v; break;
-                    case "TABELA_VALIDACAO": TabelaValidacao = v == "sim"; break;
+                    case "ENVIAR_VALIDACAO":
+                    case "TABELA_VALIDACAO": EnviarValidacao = v == "sim"; break;  // nome usado nas versões de teste
                     case "ATUALIZAR_NOTAS": AtualizarNotas = v == "sim"; break;
                     case "FREQUENCIA": FrequenciaAntiga(v); break;  // versões de teste
                     case "INTERVALO": { int n; if (int.TryParse(v, out n)) Intervalo = n; } break;
